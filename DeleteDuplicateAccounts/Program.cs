@@ -1,4 +1,5 @@
-﻿using Npgsql;
+﻿using Microsoft.Extensions.Configuration;
+using Npgsql;
 using System.Data;
 
 namespace DatabaseCleanup
@@ -7,16 +8,14 @@ namespace DatabaseCleanup
     {
         private static readonly string LogFileName = $"cleanup_log_{DateTime.Now:yyyyMMdd_HHmmss}.txt";
         private static StreamWriter logWriter;
-
-        // Connection strings - modify these according to your setup
-        private static readonly string IamConnectionString = "Host=localhost;Port=5432;Database=iam_24_06;Username=postgres;Password=web@1234;";
-        private static readonly string SdgConnectionString = "Host=localhost;Port=5432;Database=sdg_24_06;Username=postgres;Password=web@1234;";
+        private static IConfiguration configuration;
 
         public static async Task Main(string[] args)
         {
             try
             {
                 InitializeLogging();
+                InitializeConfiguration();
                 await LogAsync("=== Database Cleanup Process Started ===");
                 await LogAsync($"Timestamp: {DateTime.Now}");
 
@@ -40,6 +39,26 @@ namespace DatabaseCleanup
             }
         }
 
+        private static void InitializeConfiguration()
+        {
+            string basePath = Path.Combine(AppContext.BaseDirectory, "..", "..", "..");
+
+            var builder = new ConfigurationBuilder()
+                .SetBasePath(basePath)
+                .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
+
+            configuration = builder.Build();
+
+            var iamConnectionString = configuration.GetConnectionString("IAMConnection");
+            var sdgConnectionString = configuration.GetConnectionString("SDGConnection");
+
+            if (string.IsNullOrEmpty(iamConnectionString))
+                throw new InvalidOperationException("IamDatabase connection string not found in appsettings.json");
+
+            if (string.IsNullOrEmpty(sdgConnectionString))
+                throw new InvalidOperationException("SdgDatabase connection string not found in appsettings.json");
+        }
+
         private static void InitializeLogging()
         {
             logWriter = new StreamWriter(LogFileName, true);
@@ -55,8 +74,11 @@ namespace DatabaseCleanup
 
         private static async Task ProcessDuplicateCleanup()
         {
-            using var iamConnection = new NpgsqlConnection(IamConnectionString);
-            using var sdgConnection = new NpgsqlConnection(SdgConnectionString);
+            var iamConnectionString = configuration.GetConnectionString("IAMConnection");
+            var sdgConnectionString = configuration.GetConnectionString("SDGConnection");
+
+            using var iamConnection = new NpgsqlConnection(iamConnectionString);
+            using var sdgConnection = new NpgsqlConnection(sdgConnectionString);
 
             await iamConnection.OpenAsync();
             await sdgConnection.OpenAsync();
